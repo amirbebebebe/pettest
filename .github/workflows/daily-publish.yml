@@ -87,12 +87,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config init.defaultBranch main
           git add content/
           git add data/records/
           git status
           if [ -n "$(git diff --cached --name-only)" ]; then
             git commit -m "📝 $(date +%Y-%m-%d) 自动更新宠物内容"
-            git push
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:master
             echo "内容已提交到仓库"
           else
             echo "没有新内容需要提交"

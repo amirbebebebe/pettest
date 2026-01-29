@@ -14,17 +14,13 @@ on:
         description: '发布类型 (morning/evening/both)'
         required: false
         default: 'both'
-      test_mode:
-        description: '测试模式（不实际发布）'
-        required: false
-        default: 'false'
 
 env:
   PYTHON_VERSION: '3.11'
   TZ: Asia/Shanghai
 
 jobs:
-  pet-content-automation:
+  generate-content:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -56,25 +52,20 @@ jobs:
           echo "VOLCANO_API_SECRET=${{ secrets.VOLCANO_API_SECRET }}" >> $GITHUB_ENV
           echo "VOLCANO_MODEL=${{ secrets.VOLCANO_MODEL }}" >> $GITHUB_ENV
           echo "IMAGE_API_KEY=${{ secrets.IMAGE_API_KEY }}" >> $GITHUB_ENV
-          echo "XIAOHONGSHU_COOKIE=${{ secrets.XIAOHONGSHU_COOKIE }}" >> $GITHUB_ENV
 
       # 5. 生成早间内容
       - name: 生成早间宠物内容
         if: contains(github.event.inputs.post_type || 'both', 'morning')
-        id: generate_morning
         run: |
           echo "🌅 开始生成早间内容..."
           python scripts/content_generator.py --type morning
-          echo "::set-output name=morning_success::true"
 
       # 6. 生成晚间内容
       - name: 生成晚间宠物内容
         if: contains(github.event.inputs.post_type || 'both', 'evening')
-        id: generate_evening
         run: |
           echo "🌙 开始生成晚间内容..."
           python scripts/content_generator.py --type evening
-          echo "::set-output name=evening_success::true"
 
       # 7. 保存记录
       - name: 保存发布记录
@@ -103,6 +94,5 @@ jobs:
       - name: 发送完成通知
         if: always()
         run: |
-          echo "执行状态: ${{ job.status }}"
-          echo "早间内容: ${{ steps.generate_morning.outputs.morning_success || 'skipped' }}"
-          echo "晚间内容: ${{ steps.generate_evening.outputs.evening_success || 'skipped' }}"
+          echo "✅ 内容生成完成!"
+          echo "💡 提示: 请在本地运行 'python scripts/publisher.py --platform all --local' 发布到小红书和公众号"

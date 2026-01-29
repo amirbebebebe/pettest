@@ -1,134 +1,151 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-平台发布器
-自动将内容发布到小红书和公众号
+🐱 小红书和公众号发布器
+使用xhs-mcp-server和微信API发布内容
 """
 
 import sys
-import argparse
 import json
-import random
-from datetime import datetime
+import argparse
+import subprocess
 from pathlib import Path
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
-    XIAOHONGSHU_COOKIE, XIAHONGSHU_XS,
-    WECHAT_APPID, WECHAT_APPSECRET, WECHAT_TOKEN,
-    PUBLISH_CONFIG, get_today_date, load_json_file, get_content_path
+    XIAOHONGSHU_COOKIE, WECHAT_APPID, WECHAT_APPSECRET, get_today_date
 )
 
 
 class XiaohongshuPublisher:
-    """小红书发布器"""
+    """小红书发布器（使用xhs-mcp-server）"""
 
     def __init__(self):
+        self.phone = "13810119101"  # 用户手机号
         self.cookie = XIAOHONGSHU_COOKIE
-        self.xs = XIAHONGSHU_XS
-        self.base_url = "https://www.xiaohongshu.com"
-        self.config = PUBLISH_CONFIG["xiaohongshu"]
 
-    def _get_headers(self) -> dict:
-        """获取请求头"""
-        return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Referer": "https://www.xiaohongshu.com/",
-            "Cookie": self.cookie
-        }
+    def login(self) -> bool:
+        """
+        登录小红书（生成Cookie）
+        需要在终端运行: env phone=你的手机号 python -m xhs_mcp_server.__login__
+        """
+        print("📱 登录小红书...")
+        print("请在终端执行以下命令进行登录：")
+        print(f"env phone={self.phone} python -m xhs_mcp_server.__login__")
+        print("扫码后在小红书APP中确认登录")
+        return True
 
-    def _format_content(self, content: dict) -> dict:
-        """格式化内容为小红书发布格式"""
-        # 小红书标题限制
-        title = content.get("title", "")[:self.config["title_max_length"]]
-
-        # 小红书正文
-        body = content.get("content", "")
-
-        # 话题标签
-        hashtags = content.get("hashtags", [])
-
-        # 构建小红书格式的内容
-        formatted = {
-            "title": title,
-            "content": body,
-            "topic_tags": hashtags,
-            "image_ids": [],  # 上传图片后获取的ID
-            "visible_type": "public"  # 公开可见
-        }
-
-        return formatted
-
-    def publish(self, content: dict) -> dict:
-        """发布内容到小红书"""
-        if not self.config["enabled"]:
-            print("⚠️ 小红书发布已禁用")
-            return {"status": "skipped", "reason": "publishing disabled"}
-
-        if not self.cookie:
-            print("❌ 未配置小红书Cookie，无法发布")
-            return {"status": "failed", "reason": "no cookie configured"}
-
-        print("📤 正在发布到小红书...")
-        print(f"   标题: {content.get('title', '无标题')}")
+    def publish_with_mcp(self, title: str, content: str, image_paths: List[str]) -> dict:
+        """
+        使用xhs-mcp-server发布笔记
+        
+        Args:
+            title: 标题
+            content: 正文内容
+            image_paths: 图片路径列表
+        """
+        print(f"🚀 使用xhs-mcp-server发布笔记...")
+        print(f"   标题: {title}")
+        print(f"   内容长度: {len(content)} 字")
+        print(f"   图片数: {len(image_paths)}")
 
         try:
-            # TODO: 实现实际的小红书API调用
-            # 由于小红书没有公开API，这里需要使用Selenium模拟登录发布
-            # 或者使用第三方API服务
-
-            # 模拟发布流程
-            formatted = self._format_content(content)
-
-            # 这里调用实际的小红书发布API
-            # response = requests.post(
-            #     f"{self.base_url}/api/sns/web/v1/note/publish",
-            #     headers=self._get_headers(),
-            #     json=formatted
-            # )
-
-            print("✅ 小红书发布请求已发送（模拟）")
-            print(f"   格式化内容: {json.dumps(formatted, ensure_ascii=False)[:200]}...")
-
+            # 构建命令
+            images_str = ",".join(image_paths) if image_paths else ""
+            
+            # 构建完整命令
+            cmd = [
+                "python", "-m", "xhs_mcp_server.__publish__",
+                "--title", title,
+                "--content", content,
+                "--images", images_str
+            ]
+            
+            print(f"执行命令: {' '.join(cmd)}")
+            
+            # 执行命令
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5分钟超时
+            )
+            
+            print(f"返回码: {result.returncode}")
+            print(f"stdout: {result.stdout}")
+            if result.stderr:
+                print(f"stderr: {result.stderr}")
+            
+            if result.returncode == 0:
+                print("✅ 小红书发布成功!")
+                return {
+                    "status": "success",
+                    "platform": "xiaohongshu",
+                    "title": title,
+                    "output": result.stdout
+                }
+            else:
+                print(f"❌ 小红书发布失败")
+                return {
+                    "status": "failed",
+                    "platform": "xiaohongshu",
+                    "error": result.stderr or "Unknown error"
+                }
+                
+        except subprocess.TimeoutExpired:
+            print("❌ 发布超时（超过5分钟）")
             return {
-                "status": "success",
+                "status": "failed",
                 "platform": "xiaohongshu",
-                "note_id": f"note_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "published_at": datetime.now().isoformat(),
-                "content": formatted
+                "error": "Timeout"
             }
-
         except Exception as e:
-            print(f"❌ 小红书发布失败: {e}")
+            print(f"❌ 发布错误: {e}")
             return {
                 "status": "failed",
                 "platform": "xiaohongshu",
                 "error": str(e)
             }
 
+    def publish_simulation(self, title: str, content: str, image_paths: List[str]) -> dict:
+        """
+        模拟发布（用于测试）
+        """
+        print(f"📤 模拟发布到小红书...")
+        print(f"   标题: {title}")
+        print(f"   图片数: {len(image_paths)}")
+        
+        return {
+            "status": "success",
+            "platform": "xiaohongshu",
+            "note_id": f"note_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "title": title,
+            "published_at": datetime.now().isoformat(),
+            "mode": "simulation"
+        }
+
 
 class WechatPublisher:
-    """公众号发布器"""
+    """公众号发布器（使用微信官方API）"""
 
     def __init__(self):
         self.appid = WECHAT_APPID
         self.appsecret = WECHAT_APPSECRET
-        self.token = WECHAT_TOKEN
-        self.base_url = "https://api.weixin.qq.com"
-        self.config = PUBLISH_CONFIG["wechat"]
+        self.access_token = None
 
-    def _get_access_token(self) -> Optional[str]:
+    def get_access_token(self) -> Optional[str]:
         """获取access_token"""
         if not self.appid or not self.appsecret:
             print("❌ 未配置公众号APPID或APPSECRET")
             return None
 
-        url = f"{self.base_url}/cgi-bin/token"
+        import requests
+        
+        url = "https://api.weixin.qq.com/cgi-bin/token"
         params = {
             "grant_type": "client_credential",
             "appid": self.appid,
@@ -136,139 +153,193 @@ class WechatPublisher:
         }
 
         try:
-            import requests
+            print("🔑 获取access_token...")
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
 
             if "access_token" in data:
-                return data["access_token"]
+                self.access_token = data["access_token"]
+                print("✅ 获取access_token成功")
+                return self.access_token
             else:
-                print(f"❌ 获取access_token失败: {data.get('errmsg', '未知错误')}")
+                print(f"❌ 获取失败: {data.get('errmsg', '未知错误')}")
                 return None
 
         except Exception as e:
-            print(f"❌ 请求access_token失败: {e}")
+            print(f"❌ 请求失败: {e}")
             return None
 
-    def _format_content(self, content: dict) -> dict:
-        """格式化内容为公众号发布格式"""
-        # 公众号标题
-        title = content.get("title", "")[:self.config["title_max_length"]]
+    def upload_image(self, image_path: str) -> Optional[str]:
+        """上传图片获取media_id"""
+        if not self.access_token:
+            if not self.get_access_token():
+                return None
 
-        # 公众号正文（需要添加一些格式）
-        body = content.get("content", "")
+        import requests
+        
+        url = f"https://api.weixin.qq.com/cgi-bin/media/uploadimg"
+        params = {"access_token": self.access_token}
 
-        # 格式化HTML内容
-        html_content = self._format_html(body)
+        try:
+            print(f"📤 上传图片: {image_path}")
+            with open(image_path, 'rb') as f:
+                files = {'media': f}
+                response = requests.post(url, params=params, files=files, timeout=30)
+                data = response.json()
 
-        # 封面图
-        image_path = content.get("image_path")
+            if "media_id" in data:
+                print("✅ 图片上传成功")
+                return data["media_id"]
+            else:
+                print(f"❌ 图片上传失败: {data}")
+                return None
 
-        formatted = {
+        except Exception as e:
+            print(f"❌ 上传失败: {e}")
+            return None
+
+    def create_draft(self, title: str, content: str, thumb_media_id: str = None) -> Optional[str]:
+        """创建草稿"""
+        if not self.access_token:
+            if not self.get_access_token():
+                return None
+
+        import requests
+
+        url = f"https://api.weixin.qq.com/cgi-bin/draft/add"
+        params = {"access_token": self.access_token}
+
+        article = {
             "title": title,
-            "content": html_content,
-            "content_source_url": "",  # 原文链接
-            "thumb_media_id": "",  # 需要先上传图片获取
-            "show_cover_pic": 1,  # 显示封面图
+            "content": content,
+            "thumb_media_id": thumb_media_id,
+            "show_cover_pic": 1,
             "need_open_comment": 1,
             "only_fans_can_comment": 0
         }
 
-        return formatted
-
-    def _format_html(self, text: str) -> str:
-        """将文本转换为HTML格式"""
-        # 简单的段落格式化
-        paragraphs = text.split('\n\n')
-        html_paragraphs = []
-
-        for para in paragraphs:
-            if para.strip():
-# 替换换行符为<br>
-                para_html = para.replace('\n', '<br>')
-                html_paragraphs.append(f"<p>{para_html}</p>")
-
-        return '\n'.join(html_paragraphs)
-
-    def publish(self, content: dict) -> dict:
-        """发布内容到公众号"""
-        if not self.config["enabled"]:
-            print("⚠️ 公众号发布已禁用")
-            return {"status": "skipped", "reason": "publishing disabled"}
-
-        if not self.appid or not self.appsecret:
-            print("❌ 未配置公众号凭证，无法发布")
-            return {"status": "failed", "reason": "no credentials configured"}
-
-        print("📤 正在发布到公众号...")
-        print(f"   标题: {content.get('title', '无标题')}")
+        payload = {"articles": [article]}
 
         try:
-            # 获取access_token
-            access_token = self._get_access_token()
-            if not access_token:
-                return {"status": "failed", "reason": "no access token"}
+            print("📝 创建草稿...")
+            response = requests.post(url, params=params, json=payload, timeout=30)
+            data = response.json()
 
-            # 格式化内容
-            formatted = self._format_content(content)
-
-            # 发布草稿
-            # 注意：公众号需要先创建草稿，然后发布
-            # 这里使用发布草稿的接口
-            url = f"{self.base_url}/cgi-bin/draft/submit"
-            params = {"access_token": access_token}
-
-            payload = {
-                "media_id": ""  # 草稿media_id
-            }
-
-            # TODO: 实现实际的公众号API调用
-            # 完整的流程：
-            # 1. 上传图片获取thumb_media_id
-            # 2. 创建草稿
-            # 3. 发布草稿
-
-            print("✅ 公众号发布请求已发送（模拟）")
-            print(f"   格式化内容: {json.dumps(formatted, ensure_ascii=False)[:200]}...")
-
-            return {
-                "status": "success",
-                "platform": "wechat",
-                "media_id": f"media_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "published_at": datetime.now().isoformat(),
-                "content": formatted
-            }
+            if data.get("errcode") == 0:
+                media_id = data["media_id"]
+                print("✅ 草稿创建成功")
+                return media_id
+            else:
+                print(f"❌ 创建失败: {data}")
+                return None
 
         except Exception as e:
-            print(f"❌ 公众号发布失败: {e}")
+            print(f"❌ 创建草稿失败: {e}")
+            return None
+
+    def publish_draft(self, media_id: str) -> bool:
+        """发布草稿"""
+        if not self.access_token:
+            if not self.get_access_token():
+                return False
+
+        import requests
+
+        url = f"https://api.weixin.qq.com/cgi-bin/draft/publish"
+        params = {"access_token": self.access_token}
+        payload = {"media_id": media_id}
+
+        try:
+            print("📤 发布草稿...")
+            response = requests.post(url, params=params, json=payload, timeout=30)
+            data = response.json()
+
+            if data.get("errcode") == 0:
+                print("✅ 草稿发布成功")
+                return True
+            else:
+                print(f"❌ 发布失败: {data}")
+                return False
+
+        except Exception as e:
+            print(f"❌ 发布失败: {e}")
+            return False
+
+    def publish(self, title: str, content: str, image_paths: List[str] = None, auto_publish: bool = False) -> dict:
+        """
+        发布到公众号
+        
+        Args:
+            title: 标题
+            content: 正文内容
+            image_paths: 图片路径列表
+            auto_publish: 是否直接发布（True=发布，False=只创建草稿）
+        """
+        print(f"📤 发布到公众号...")
+        print(f"   标题: {title}")
+        
+        # 上传封面图（如果有）
+        thumb_media_id = None
+        if image_paths and len(image_paths) > 0:
+            thumb_media_id = self.upload_image(image_paths[0])
+
+        # 创建草稿
+        media_id = self.create_draft(title, content, thumb_media_id)
+        
+        if not media_id:
             return {
                 "status": "failed",
                 "platform": "wechat",
-                "error": str(e)
+                "error": "Failed to create draft"
             }
 
+        # 如果需要，自动发布
+        if auto_publish:
+            success = self.publish_draft(media_id)
+            if not success:
+                return {
+                    "status": "failed",
+                    "platform": "wechat",
+                    "draft_id": media_id,
+                    "error": "Failed to publish draft"
+                }
 
-def load_latest_content() -> Optional[dict]:
-    """加载今日生成的内容"""
-    date_str = get_today_date()
+        return {
+            "status": "success",
+            "platform": "wechat",
+            "draft_id": media_id,
+            "title": title,
+            "auto_published": auto_publish,
+            "published_at": datetime.now().isoformat()
+        }
 
-    # 尝试从记录文件加载
+
+def load_content(file_path: str) -> Optional[dict]:
+    """加载生成的内容"""
+    path = Path(file_path)
+    if path.exists():
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+
+def find_latest_content() -> Optional[dict]:
+    """查找最新的内容文件"""
     records_dir = Path(__file__).parent.parent / "data" / "records"
-    record_file = records_dir / f"{date_str}_content.json"
+    
+    if not records_dir.exists():
+        return None
 
-    if record_file.exists():
-        return load_json_file(record_file)
-
-    # 尝试从内容目录加载
-    content_dir = get_content_path("xiaohongshu", date_str)
-
-    if content_dir.exists():
-        for json_file in content_dir.glob("*.json"):
-            content = load_json_file(json_file)
-            if content:
-                return content
-
-    print("❌ 未找到今日生成的内容")
+    # 查找今日的内容文件
+    date_str = get_today_date()
+    
+    # 按修改时间排序查找
+    content_files = list(records_dir.glob(f"{date_str}*_post.json"))
+    content_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    
+    if content_files:
+        return load_content(str(content_files[0]))
+    
     return None
 
 
@@ -288,6 +359,16 @@ def main():
         default=None,
         help="指定内容文件路径 (默认: 自动加载今日内容)"
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="使用本地MCP发布（需要安装xhs-mcp-server）"
+    )
+    parser.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help="公众号：自动发布草稿（默认只创建草稿）"
+    )
 
     args = parser.parse_args()
 
@@ -295,57 +376,94 @@ def main():
     print("🚀 媒体运营自动化 - 平台发布器")
     print("=" * 60)
     print(f"📅 发布日期: {get_today_date()}")
-    print(f"⏰ 发布时间: {datetime.now().strftime('%H:%M:%S')}")
     print(f"📡 发布平台: {args.platform}")
+    print(f"🖥️  发布模式: {'本地MCP' if args.local else '模拟'}")
     print("=" * 60)
 
     # 加载内容
     if args.content:
-        content = load_json_file(Path(args.content))
+        content = load_content(args.content)
+        if not content:
+            print(f"❌ 无法加载内容文件: {args.content}")
+            return
     else:
-        content = load_latest_content()
+        print("🔍 查找今日生成的内容...")
+        content = find_latest_content()
+        if not content:
+            print("❌ 未找到今日生成的内容")
+            print("💡 请先运行: python scripts/content_generator.py --type morning")
+            return
 
-    if not content:
-        print("❌ 没有可发布的内容")
-        sys.exit(1)
+    print("✅ 找到内容文件")
+
+    # 提取内容
+    body = content.get("body", {})
+    intro = body.get("intro", "")
+    main_body = body.get("body", "")
+    cta = body.get("cta", "")
+    
+    # 构建标题和内容
+    title = f"测测你是不是合格铲屎官？送宠物试用装了！"
+    full_content = f"{intro}\n\n{main_body}\n\n{cta}"
+
+    # 获取图片路径
+    image_paths = []
+    meta = content.get("meta", {})
+    date_str = meta.get("date", get_today_date())
+    images_dir = Path(__file__).parent.parent / "content" / "xiaohongshu" / date_str
+    
+    if images_dir.exists():
+        for img in sorted(images_dir.glob("*.png")):
+            image_paths.append(str(img))
+        print(f"📷 找到 {len(image_paths)} 张图片")
 
     results = {}
 
     # 发布到小红书
     if args.platform in ["xiaohongshu", "all"]:
         publisher = XiaohongshuPublisher()
-        results["xiaohongshu"] = publisher.publish(content)
+        
+        if args.local and image_paths:
+            results["xiaohongshu"] = publisher.publish_with_mcp(title, full_content, image_paths)
+        else:
+            results["xiaohongshu"] = publisher.publish_simulation(title, full_content, image_paths)
+            if not args.local:
+                print("💡 提示: 使用 --local 参数可在本地环境使用真实MCP发布")
 
     # 发布到公众号
     if args.platform in ["wechat", "all"]:
         publisher = WechatPublisher()
-        results["wechat"] = publisher.publish(content)
+        results["wechat"] = publisher.publish(title, full_content, image_paths if 'image_paths' in dir() else [], args.auto_publish)
 
-    # 保存发布记录
-    records_dir = Path(__file__).parent.parent / "data" / "records"
-    records_dir.mkdir(parents=True, exist_ok=True)
-
-    record_file = records_dir / f"{get_today_date()}_publish_results.json"
-
-    with open(record_file, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
+    # 打印结果
     print("\n" + "=" * 60)
     print("📊 发布结果汇总:")
     print("-" * 60)
 
     for platform, result in results.items():
-        status = result.get("status", "unknown")
         platform_name = "小红书" if platform == "xiaohongshu" else "公众号"
-        print(f"   {platform_name}: {status}")
-
+        status = result.get("status", "unknown")
+        print(f"\n{platform_name}:")
+        print(f"  状态: {status}")
+        
         if result.get("note_id"):
-            print(f"      文章ID: {result['note_id']}")
-        if result.get("media_id"):
-            print(f"      媒体ID: {result['media_id']}")
+            print(f"  笔记ID: {result['note_id']}")
+        if result.get("draft_id"):
+            print(f"  草稿ID: {result['draft_id']}")
+        if result.get("mode"):
+            print(f"  模式: {result['mode']}")
 
-    print("-" * 60)
-    print(f"💾 记录已保存到: {record_file}")
+    print("\n" + "=" * 60)
+
+    # 保存发布记录
+    records_dir = Path(__file__).parent.parent / "data" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    
+    record_file = records_dir / f"{get_today_date()}_publish_results.json"
+    with open(record_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    print(f"💾 发布记录已保存到: {record_file}")
     print("=" * 60)
 
     return results

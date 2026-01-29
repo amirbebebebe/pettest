@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  media-publisher:
+    build: .
+    container_name: media-publisher
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./content:/app/content
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.py:/app/config.py
+    environment:
+      - PYTHONPATH=/app
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env
+    command: >
+      bash -c "python3 scripts/cloud_publisher.py"
+    networks:
+      - media-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: media-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./content:/var/www/content:ro
+    depends_on:
+      - media-publisher
+    networks:
+      - media-network
+
+networks:
+  media-network:
+    driver: bridge

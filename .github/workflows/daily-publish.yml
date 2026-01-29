@@ -49,8 +49,12 @@ jobs:
       # 4. 配置环境变量
       - name: 配置环境变量
         run: |
+          echo "AI_PROVIDER=${{ secrets.AI_PROVIDER }}" >> $GITHUB_ENV
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
           echo "OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}" >> $GITHUB_ENV
+          echo "VOLCANO_API_KEY=${{ secrets.VOLCANO_API_KEY }}" >> $GITHUB_ENV
+          echo "VOLCANO_API_SECRET=${{ secrets.VOLCANO_API_SECRET }}" >> $GITHUB_ENV
+          echo "VOLCANO_MODEL=${{ secrets.VOLCANO_MODEL }}" >> $GITHUB_ENV
           echo "IMAGE_API_KEY=${{ secrets.IMAGE_API_KEY }}" >> $GITHUB_ENV
           echo "XIAOHONGSHU_COOKIE=${{ secrets.XIAOHONGSHU_COOKIE }}" >> $GITHUB_ENV
 

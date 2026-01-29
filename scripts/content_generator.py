@@ -3,6 +3,7 @@
 """
 🐱 小红书宠物内容生成器
 自动生成爆款宠物测试类图文内容
+支持OpenAI和火山引擎API
 """
 
 import sys
@@ -17,7 +18,9 @@ from typing import Optional, List, Dict
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
+    AI_PROVIDER,
     OPENAI_API_KEY, OPENAI_MODEL, OPENAI_API_BASE,
+    VOLCANO_API_KEY, VOLCANO_API_SECRET, VOLCANO_MODEL, VOLCANO_API_BASE,
     IMAGE_API_KEY, IMAGE_API_BASE, IMAGE_MODEL,
     CONTENT_CONFIG, PET_TOPIC_CATEGORIES, PET_IMAGE_STYLES,
     MAIN_POSTER_PROMPT, QUESTION_CARD_PROMPT, BODY_CONTENT_PROMPT,
@@ -30,27 +33,52 @@ class PetContentGenerator:
     """小红书宠物内容生成器"""
 
     def __init__(self):
-        self.api_key = OPENAI_API_KEY
-        self.model = OPENAI_MODEL
-        self.api_base = OPENAI_API_BASE
+        self.ai_provider = AI_PROVIDER
+        
+        # OpenAI 配置
+        self.openai_api_key = OPENAI_API_KEY
+        self.openai_model = OPENAI_MODEL
+        self.openai_api_base = OPENAI_API_BASE
+        
+        # 火山引擎配置
+        self.volcano_api_key = VOLCANO_API_KEY
+        self.volcano_api_secret = VOLCANO_API_SECRET
+        self.volcano_model = VOLCANO_MODEL
+        self.volcano_api_base = VOLCANO_API_BASE
+        
+        # 图片配置
         self.image_api_key = IMAGE_API_KEY
         self.image_api_base = IMAGE_API_BASE
         self.image_model = IMAGE_MODEL
+        
         self.hot_tracker = HotTopicTracker()
+
+    def _call_llm_api(self, prompt: str) -> Optional[str]:
+        """调用大语言模型API（自动选择OpenAI或火山引擎）"""
+        # 优先使用火山引擎
+        if self.ai_provider == "volcano" and self.volcano_api_key:
+            return self._call_volcano_api(prompt)
+        
+        # 备选OpenAI
+        if self.openai_api_key:
+            return self._call_openai_api(prompt)
+        
+        print("❌ 错误: 未配置任何API密钥")
+        return None
 
     def _call_openai_api(self, prompt: str) -> Optional[str]:
         """调用OpenAI API生成内容"""
-        if not self.api_key:
+        if not self.openai_api_key:
             print("❌ 错误: 未配置OPENAI_API_KEY")
             return None
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
 
         payload = {
-            "model": self.model,
+            "model": self.openai_model,
             "messages": [
                 {
                     "role": "system",
@@ -66,9 +94,9 @@ class PetContentGenerator:
         }
 
         try:
-            print(f"📡 调用OpenAI API ({self.model})...")
+            print(f"📡 调用OpenAI API ({self.openai_model})...")
             response = requests.post(
-                f"{self.api_base}/chat/completions",
+                f"{self.openai_api_base}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=60
@@ -77,17 +105,163 @@ class PetContentGenerator:
 
             result = response.json()
             content = result["choices"][0]["message"]["content"]
-            print("✅ API调用成功")
+            print("✅ OpenAI API调用成功")
             return content
 
         except requests.exceptions.RequestException as e:
-            print(f"❌ API调用失败: {e}")
+            print(f"❌ OpenAI API调用失败: {e}")
+            return None
+
+    def _call_volcano_api(self, prompt: str) -> Optional[str]:
+        """调用火山引擎API（豆包大模型）"""
+        import hashlib
+        import hmac
+        import base64
+        import time
+        
+        if not self.volcano_api_key or not self.volcano_api_secret:
+            print("❌ 错误: 未配置火山引擎API密钥")
+            return None
+
+        try:
+            # 生成认证Token
+            timestamp = str(int(time.time()))
+            signature_payload = f"{timestamp}.{self.volcano_api_key}"
+            signature = base64.b64encode(
+                hmac.new(
+                    self.volcano_api_secret.encode('utf-8'),
+                    signature_payload.encode('utf-8'),
+                    hashlib.sha256
+                ).digest()
+            ).decode('utf-8')
+            
+            auth_token = f"HMAC-SHA256 Credential={self.volcano_api_key}, Signature={signature}, Timestamp={timestamp}"
+
+            headers = {
+                "Authorization": auth_token,
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": self.volcano_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "你是一位小红书爆款内容专家，擅长创作高互动、高评论的宠物测试类内容。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.8,
+                "max_tokens": 2000
+            }
+
+            print(f"📡 调用火山引擎API (豆包 {self.volcano_model})...")
+            response = requests.post(
+                f"{self.volcano_api_base}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+            print("✅ 火山引擎API调用成功")
+            return content
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 火山引擎API调用失败: {e}")
             return None
 
     def _call_image_api(self, prompt: str, output_path: Path) -> bool:
-        """调用图像生成API生成配图"""
+        """调用图像生成API生成配图（支持OpenAI DALL-E和火山Seedream）"""
+        
+        # 优先使用火山引擎图像生成
+        if self.ai_provider == "volcano" and self.volcano_api_key:
+            return self._call_volcano_image_api(prompt, output_path)
+        
+        # 备选OpenAI DALL-E
+        if self.image_api_key:
+            return self._call_dalle_api(prompt, output_path)
+        
+        print("⚠️ 未配置图像生成API，跳过图片生成")
+        return False
+
+    def _call_volcano_image_api(self, prompt: str, output_path: Path) -> bool:
+        """调用火山引擎Seedream API生成图片"""
+        import hashlib
+        import hmac
+        import base64
+        import time
+        
+        try:
+            # 生成认证Token
+            timestamp = str(int(time.time()))
+            signature_payload = f"{timestamp}.{self.volcano_api_key}"
+            signature = base64.b64encode(
+                hmac.new(
+                    self.volcano_api_secret.encode('utf-8'),
+                    signature_payload.encode('utf-8'),
+                    hashlib.sha256
+                ).digest()
+            ).decode('utf-8')
+            
+            auth_token = f"HMAC-SHA256 Credential={self.volcano_api_key}, Signature={signature}, Timestamp={timestamp}"
+
+            headers = {
+                "Authorization": auth_token,
+                "Content-Type": "application/json"
+            }
+
+            # 火山引擎图像生成参数（根据你提供的API示例）
+            payload = {
+                "model": "doubao-seedream-4-5-251128",
+                "prompt": prompt,
+                "sequential_image_generation": "disabled",
+                "response_format": "url",
+                "size": "2K",
+                "stream": False,
+                "watermark": True
+            }
+
+            print(f"🎨 调用火山引擎Seedream API生成图片...")
+            response = requests.post(
+                f"{self.volcano_api_base}/images/generations",
+                headers=headers,
+                json=payload,
+                timeout=180  # 图片生成可能需要更长时间
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            image_url = result["data"][0]["url"]
+
+            # 下载图片
+            print("📥 下载生成的图片...")
+            image_response = requests.get(image_url, timeout=60)
+            image_response.raise_for_status()
+
+            with open(output_path, 'wb') as f:
+                f.write(image_response.content)
+
+            print(f"✅ 火山引擎图片已保存到: {output_path}")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 火山引擎图片生成失败: {e}")
+            # 尝试回退到OpenAI
+            print("🔄 回退尝试OpenAI DALL-E...")
+            if self.image_api_key:
+                return self._call_dalle_api(prompt, output_path)
+            return False
+
+    def _call_dalle_api(self, prompt: str, output_path: Path) -> bool:
+        """调用OpenAI DALL-E API生成图片"""
         if not self.image_api_key:
-            print("⚠️ 未配置图像生成API，跳过图片生成")
+            print("⚠️ 未配置DALL-E API密钥")
             return False
 
         headers = {
@@ -104,7 +278,7 @@ class PetContentGenerator:
         }
 
         try:
-            print(f"🎨 调用图像生成API ({self.image_model})...")
+            print(f"🎨 调用OpenAI DALL-E API ({self.image_model})...")
             response = requests.post(
                 f"{self.image_api_base}/images/generations",
                 headers=headers,
@@ -124,11 +298,11 @@ class PetContentGenerator:
             with open(output_path, 'wb') as f:
                 f.write(image_response.content)
 
-            print(f"✅ 图片已保存到: {output_path}")
+            print(f"✅ DALL-E图片已保存到: {output_path}")
             return True
 
         except requests.exceptions.RequestException as e:
-            print(f"❌ 图片生成失败: {e}")
+            print(f"❌ DALL-E图片生成失败: {e}")
             return False
 
     def generate_questions(self, pet_type: str = "猫咪") -> List[Dict]:
@@ -205,7 +379,7 @@ class PetContentGenerator:
             max_words=CONTENT_CONFIG["max_words"]
         )
 
-        response = self._call_openai_api(prompt)
+        response = self._call_llm_api(prompt)
 
         if not response:
             # 使用默认模板
@@ -293,6 +467,7 @@ class PetContentGenerator:
         print("=" * 60)
         print(f"📅 生成日期: {get_today_date()}")
         print(f"⏰ 发布时段: {post_type} ({'早间' if post_type == 'morning' else '晚间'})")
+        print(f"🤖 AI提供商: {'火山引擎(豆包)' if self.ai_provider == 'volcano' else 'OpenAI'}")
         print("=" * 60)
 
         # 1. 选择宠物类型
@@ -328,6 +503,7 @@ class PetContentGenerator:
                 "post_type": post_type,
                 "pet_type": pet_type,
                 "hot_topic": top_hot['topic'],
+                "ai_provider": self.ai_provider,
                 "generated_at": datetime.now().isoformat()
             },
             "questions": questions,
@@ -367,6 +543,7 @@ class PetContentGenerator:
         print("=" * 60)
         print(f"🐾 宠物: {pet_type}")
         print(f"🔥 热点: {top_hot['topic']}")
+        print(f"🤖 AI: {'火山引擎' if self.ai_provider == 'volcano' else 'OpenAI'}")
         print(f"\n📝 正文开头:")
         print(f"   {body_content['intro']}")
         print(f"\n💬 CTA:")

@@ -26,16 +26,30 @@ LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 # ==================== AI API 配置 ====================
+# 选择AI提供商：openai 或 volcano
+AI_PROVIDER = os.getenv("AI_PROVIDER", "volcano")  # 默认使用火山引擎
 
-# OpenAI API (用于生成文案)
+# OpenAI API (用于生成文案 - 备选)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
 
-# 图像生成 API
+# 火山引擎 API (豆包大模型 - 推荐)
+VOLCANO_API_KEY = os.getenv("VOLCANO_API_KEY", "")
+VOLCANO_API_SECRET = os.getenv("VOLCANO_API_SECRET", "")
+VOLCANO_ENDPOINT_ID = os.getenv("VOLCANO_ENDPOINT_ID", "")  # 部署的模型ID
+VOLCANO_MODEL = os.getenv("VOLCANO_MODEL", "doubao-pro-32k")  # 豆包Pro 32K
+VOLCANO_API_BASE = "https://ark.cn-beijing.volces.com/api/v3"
+
+# 图像生成 API (支持OpenAI DALL-E和火山Seedream)
 IMAGE_API_KEY = os.getenv("IMAGE_API_KEY", "")
 IMAGE_API_BASE = os.getenv("IMAGE_API_BASE", "https://api.openai.com/v1")
 IMAGE_MODEL = os.getenv("IMAGE_MODEL", "dall-e-3")
+
+# 火山引擎图像生成配置
+VOLCANO_IMAGE_MODEL = os.getenv("VOLCANO_IMAGE_MODEL", "doubao-seedream-4-5-251128")
+VOLCANO_IMAGE_SIZE = os.getenv("VOLCANO_IMAGE_SIZE", "2K")  # 2K, 1024x1024等
+VOLCANO_IMAGE_WATERMARK = os.getenv("VOLCANO_IMAGE_WATERMARK", "true")
 
 # ==================== 平台配置 ====================
 

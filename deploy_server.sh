@@ -1,5 +1,5 @@
 #!/bin/bash
-# 🚀 媒体自动化系统 - 服务器端一键部署脚本（CentOS/openCloudOS版）
+# 🚀 媒体自动化系统 - 服务器端一键部署脚本（OpenCloudOS/CentOS版）
 # 在云服务器上执行此脚本
 
 set -e  # 遇到错误立即退出
@@ -8,15 +8,7 @@ echo "================================"
 echo "🚀 媒体自动化系统 - 服务器部署"
 echo "================================"
 echo ""
-
-# 检测系统类型
-if [ -f /etc/redhat-release ]; then
-    SYSTEM="centos"
-    echo "📊 检测到系统: $(cat /etc/redhat-release)"
-else
-    echo "❌ 不支持的系统"
-    exit 1
-fi
+echo "📊 检测到系统: OpenCloudOS $(cat /etc/opencloudos-release 2>/dev/null || cat /etc/os-release | grep VERSION_ID | cut -d'"' -f2)"
 
 # 1. 安装系统依赖
 echo ""
@@ -77,13 +69,16 @@ CHROMEREPO
     yum install -y google-chrome-stable --noinstall-recommends
 fi
 
-if ! command -v chromedriver &> /dev/null; then
-    npx @puppeteer/browsers install chromedriver@latest 2>/dev/null || \
-    (CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+' | head -1) && \
-     curl -sL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o /tmp/chromedriver.zip && \
-     unzip -q /tmp/chromedriver.zip -d /tmp && \
-     mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ && \
-     chmod +x /usr/local/bin/chromedriver)
+# 安装ChromeDriver
+CHROME_VERSION=$(google-chrome --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+if [ -n "$CHROME_VERSION" ]; then
+    echo "   Chrome版本: $CHROME_VERSION"
+    curl -sL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" -o /tmp/chromedriver.zip
+    unzip -q /tmp/chromedriver.zip -d /tmp
+    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/
+    chmod +x /usr/local/bin/chromedriver
+    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
+    echo "✅ ChromeDriver安装成功"
 fi
 
 # 6. 安装xhs-mcp-server

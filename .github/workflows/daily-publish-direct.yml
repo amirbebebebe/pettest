@@ -40,16 +40,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      # 3. 安装Chrome和ChromeDriver
+      # 3. 安装Chrome
       - name: 安装Chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+          install-chromedriver: false
 
+      # 3.1 手动安装ChromeDriver
       - name: 安装ChromeDriver
-        uses: browser-actions/setup-chrome-driver@v1
-        with:
-          chrome-driver-version: stable
+        run: |
+          CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1)
+          CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d. -f1)
+          CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}")
+          curl -sL "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" -o /tmp/chromedriver.zip
+          unzip -q /tmp/chromedriver.zip -d /tmp
+          sudo mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+          rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
 
       # 4. 验证Chrome安装
       - name: 验证Chrome安装

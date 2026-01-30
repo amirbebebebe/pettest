@@ -109,15 +109,15 @@ jobs:
       # 10. 提交内容到仓库
       - name: 提交今日内容
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add content/
-          git add data/records/
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global init.defaultBranch main
           git status
+          git add content/ || true
+          git add data/records/ || true
           if [ -n "$(git diff --cached --name-only)" ]; then
-            git commit -m "📝 $(date +%Y-%m-%d) 自动更新宠物内容"
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:master
-            echo "内容已提交到仓库"
+            git commit -m "📝 $(date +%Y-%m-%d) 自动更新宠物内容" || echo "没有新内容需要提交"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:master || echo "推送失败或无需推送"
           else
             echo "没有新内容需要提交"
           fi

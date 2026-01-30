@@ -1,0 +1,125 @@
+name: 小红书宠物内容自动化（直接发布版）
+
+# 触发条件：每天早上6点和晚上8点（北京时间）
+on:
+  schedule:
+    # UTC时间22点 = 北京时间次日6点（早间内容）
+    - cron: '0 22 * * *'
+    # UTC时间12点 = 北京时间20点（晚间内容）
+    - cron: '0 12 * * *'
+  # 手动触发测试
+  workflow_dispatch:
+    inputs:
+      post_type:
+        description: '发布类型 (morning/evening/both)'
+        required: false
+        default: 'both'
+      test_mode:
+        description: '测试模式（只生成不发布）'
+        required: false
+        default: 'false'
+
+env:
+  PYTHON_VERSION: '3.11'
+  TZ: Asia/Shanghai
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # 1. 检出代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 2. 设置Python环境
+      - name: 设置Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      # 3. 安装Chrome和ChromeDriver
+      - name: 安装Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: 安装ChromeDriver
+        uses: browser-actions/setup-chrome-driver@v1
+        with:
+          chrome-driver-version: stable
+
+      # 4. 验证Chrome安装
+      - name: 验证Chrome安装
+        run: |
+          google-chrome --version
+          chromedriver --version
+
+      # 5. 安装依赖
+      - name: 安装Python依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium requests
+
+      # 6. 配置环境变量
+      - name: 配置环境变量
+        run: |
+          echo "XIAOHONGSHU_COOKIE=${{ secrets.XIAOHONGSHU_COOKIE }}" >> $GITHUB_ENV
+          echo "VOLCANO_API_KEY=${{ secrets.VOLCANO_API_KEY }}" >> $GITHUB_ENV
+          echo "VOLCANO_API_SECRET=${{ secrets.VOLCANO_API_SECRET }}" >> $GITHUB_ENV
+
+      # 7. 生成内容
+      - name: 生成早间宠物内容
+        if: contains(github.event.inputs.post_type || 'both', 'morning')
+        run: |
+          echo "🌅 开始生成早间内容..."
+          python scripts/content_generator.py --type morning
+
+      - name: 生成晚间宠物内容
+        if: contains(github.event.inputs.post_type || 'both', 'evening')
+        run: |
+          echo "🌙 开始生成晚间内容..."
+          python scripts/content_generator.py --type evening
+
+      # 8. 保存记录
+      - name: 保存发布记录
+        run: |
+          echo "💾 保存记录..."
+          python scripts/save_records.py
+
+      # 9. 发布到小红书（如果不是测试模式）
+      - name: 发布到小红书
+        if: github.event.inputs.test_mode != 'true'
+        run: |
+          echo "🚀 开始发布到小红书..."
+          python scripts/github_publisher.py publish
+        env:
+          XIAOHONGSHU_COOKIE: ${{ secrets.XIAOHONGSHU_COOKIE }}
+
+      # 10. 提交内容到仓库
+      - name: 提交今日内容
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add content/
+          git add data/records/
+          git status
+          if [ -n "$(git diff --cached --name-only)" ]; then
+            git commit -m "📝 $(date +%Y-%m-%d) 自动更新宠物内容"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:master
+            echo "内容已提交到仓库"
+          else
+            echo "没有新内容需要提交"
+          fi
+
+      # 11. 发送完成通知
+      - name: 发送完成通知
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ 内容生成并发布完成!"
+          else
+            echo "❌ 流程失败，请检查日志"
+          fi
